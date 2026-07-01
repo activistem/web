@@ -1,10 +1,24 @@
-import { View, Text, Switch, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../lib/ThemeContext';
+import { supabase } from '../lib/supabase';
 
 export default function SettingsScreen() {
   const { isDark, colors, toggleTheme } = useTheme();
+
+  const handleLogout = () => {
+    Alert.alert('ログアウト', 'ログアウトしますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: 'ログアウト',
+        style: 'destructive',
+        onPress: async () => {
+          await supabase.auth.signOut();
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -41,6 +55,21 @@ export default function SettingsScreen() {
             thumbColor="#fff"
           />
         </View>
+      </View>
+
+      {/* アカウントセクション */}
+      <View style={styles.content}>
+        <Text style={[styles.sectionLabel, { color: colors.overlay45 }]}>アカウント</Text>
+        <TouchableOpacity
+          style={[styles.row, { backgroundColor: colors.card, borderColor: colors.cardBorder }]}
+          onPress={handleLogout}
+          activeOpacity={0.7}
+        >
+          <View style={styles.rowLeft}>
+            <Text style={styles.rowEmoji}>🚪</Text>
+            <Text style={[styles.rowTitle, { color: '#FF4D6A' }]}>ログアウト</Text>
+          </View>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );

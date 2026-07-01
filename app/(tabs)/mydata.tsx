@@ -284,21 +284,6 @@ export default function MyDataScreen() {
     }
   };
 
-  // ── ログアウト ──
-  const handleLogout = () => {
-    Alert.alert('ログアウト', 'ログアウトしますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: 'ログアウト',
-        style: 'destructive',
-        onPress: async () => {
-          await supabase.auth.signOut();
-          router.replace('/(auth)/login');
-        },
-      },
-    ]);
-  };
-
   // ── AI チャット ──
   const sendMessage = (text: string) => {
     if (!text.trim()) return;
@@ -367,14 +352,9 @@ export default function MyDataScreen() {
       <AppHeader
         title="Activistem!"
         right={
-          <View style={styles.headerRight}>
-            <TouchableOpacity style={styles.settingsBtn} onPress={() => router.push('/settings')}>
-              <Text style={styles.settingsBtnText}>⚙️</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-              <Text style={styles.logoutBtnText}>ログアウト</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.settingsBtn} onPress={() => router.push('/settings')}>
+            <Text style={styles.settingsBtnText}>⚙️</Text>
+          </TouchableOpacity>
         }
       />
 
@@ -665,17 +645,8 @@ export default function MyDataScreen() {
 function makeStyles(c: AppColors) {
   return StyleSheet.create({
     container: { flex: 1 },
-    headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
     settingsBtn: { paddingHorizontal: 6, paddingVertical: 4 },
     settingsBtnText: { fontSize: 18 },
-    logoutBtn: {
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: c.overlay45,
-    },
-    logoutBtnText: { color: c.muted, fontSize: 12 },
 
     tabs: {
       flexDirection: 'row',
