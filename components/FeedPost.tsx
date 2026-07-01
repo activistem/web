@@ -1,8 +1,24 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Image, Modal, Pressable } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Image, Modal, Pressable, Linking } from 'react-native';
 import { router } from 'expo-router';
 import { useColors } from '../lib/ThemeContext';
 import { AppColors } from '../constants/Colors';
+
+const URL_REGEX = /https?:\/\/[^\s]+/g;
+
+function parseLinks(text: string): { text: string; isUrl: boolean }[] {
+  const parts: { text: string; isUrl: boolean }[] = [];
+  let lastIndex = 0;
+  URL_REGEX.lastIndex = 0;
+  let match;
+  while ((match = URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) parts.push({ text: text.slice(lastIndex, match.index), isUrl: false });
+    parts.push({ text: match[0], isUrl: true });
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push({ text: text.slice(lastIndex), isUrl: false });
+  return parts;
+}
 
 const SCREEN_W = Dimensions.get('window').width;
 const CARD_W = Math.min(SCREEN_W, 500);
@@ -197,7 +213,19 @@ const FeedPost = React.memo(function FeedPost({
           {body.length > 0 && (
             <Text style={styles.captionText}>
               <Text style={styles.captionAuthor}>{authorName} </Text>
-              {body}
+              {parseLinks(body).map((part, i) =>
+                part.isUrl ? (
+                  <Text
+                    key={i}
+                    style={styles.captionLink}
+                    onPress={() => Linking.openURL(part.text).catch(() => {})}
+                  >
+                    {part.text}
+                  </Text>
+                ) : (
+                  <Text key={i}>{part.text}</Text>
+                )
+              )}
             </Text>
           )}
           {hashtags.length > 0 && (
@@ -319,6 +347,7 @@ function makeStyles(c: AppColors) {
     captionArea: { paddingHorizontal: PAD, paddingBottom: 10, gap: 4 },
     captionText: { color: c.textBody, fontSize: 13, lineHeight: 19 },
     captionAuthor: { fontWeight: '700', color: c.text },
+    captionLink: { color: c.primary2, textDecorationLine: 'underline' },
     hashtagLine: { color: c.primary2, fontSize: 12, lineHeight: 18 },
   });
 }
