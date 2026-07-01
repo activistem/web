@@ -18,7 +18,6 @@ import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import AppHeader from '../../components/AppHeader';
-import FeedPost from '../../components/FeedPost';
 import { useColors } from '../../lib/ThemeContext';
 import { AppColors } from '../../constants/Colors';
 import { supabase } from '../../lib/supabase';
@@ -36,16 +35,6 @@ type Profile = {
   projects_count: number;
 };
 
-type Post = {
-  id: string;
-  user_id: string;
-  content: string;
-  hashtags: string[];
-  created_at: string;
-  image_url: string | null;
-  image_urls: string[];
-};
-
 type Note = {
   id: string;
   date: string;
@@ -54,16 +43,6 @@ type Note = {
 };
 
 type Message = { role: 'ai' | 'user'; text: string };
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const m = Math.floor(diff / 60000);
-  if (m < 1) return 'たった今';
-  if (m < 60) return `${m}分前`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h}時間前`;
-  return `${Math.floor(h / 24)}日前`;
-}
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -101,33 +80,12 @@ export default function MyDataScreen() {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
 
-  // 活動記録
-  const [myPosts, setMyPosts] = useState<Post[]>([]);
-  const [loadingPosts, setLoadingPosts] = useState(false);
-
   // ノート
   const [notes, setNotes] = useState<Note[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
   const [noteDate, setNoteDate] = useState(todayIso);
   const [noteContent, setNoteContent] = useState('');
   const [savingNote, setSavingNote] = useState(false);
-
-  const fetchMyPosts = useCallback(async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    setLoadingPosts(true);
-    const { data } = await supabase
-      .from('posts')
-      .select('id, user_id, content, hashtags, created_at, image_url, image_urls')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (data) setMyPosts(data.map((p: any) => ({ ...p, image_urls: p.image_urls ?? [] })) as Post[]);
-    setLoadingPosts(false);
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'activity') fetchMyPosts();
-  }, [activeTab, fetchMyPosts]);
 
   const fetchNotes = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
@@ -189,17 +147,6 @@ export default function MyDataScreen() {
       ]);
     }
   };
-
-  const handleDeletePost = useCallback(async (post: Post) => {
-    const allUrls = post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : [];
-    for (const url of allUrls) {
-      const match = url.match(/\/storage\/v1\/object\/public\/post-images\/(.+)/);
-      if (match?.[1]) await supabase.storage.from('post-images').remove([match[1]]);
-    }
-    const { error } = await supabase.from('posts').delete().eq('id', post.id);
-    if (error) { Alert.alert('削除エラー', error.message); return; }
-    setMyPosts(prev => prev.filter(p => p.id !== post.id));
-  }, []);
 
   // 編集モード
   const [isEditing, setIsEditing] = useState(false);
@@ -772,34 +719,12 @@ export default function MyDataScreen() {
 
       {/* ══ 活動記録タブ ══ */}
       {activeTab === 'activity' && (
-        <ScrollView style={styles.profileScroll} contentContainerStyle={styles.activityContent} showsVerticalScrollIndicator={false}>
-          {loadingPosts ? (
-            <ActivityIndicator color={colors.primary} style={{ marginTop: 48 }} />
-          ) : myPosts.length === 0 ? (
-            <View style={styles.placeholder}>
-              <Text style={styles.placeholderEmoji}>📝</Text>
-              <Text style={styles.placeholderText}>
-                まだ投稿がありません。{'\n'}「発信」タブから最初の投稿をしてみましょう。
-              </Text>
-            </View>
-          ) : (
-            myPosts.map(post => (
-              <FeedPost
-                key={post.id}
-                authorName={profile?.full_name ?? ''}
-                authorRole={profile?.role ?? ''}
-                timeAgo={timeAgo(post.created_at)}
-                body={post.content}
-                hashtags={post.hashtags}
-                avatarColor={profile?.avatar_color}
-                avatarUrl={profile?.avatar_url}
-                imageUrls={post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : []}
-                onDelete={() => handleDeletePost(post)}
-                visible
-              />
-            ))
-          )}
-        </ScrollView>
+        <View style={styles.placeholder}>
+          <Text style={styles.placeholderEmoji}>📊</Text>
+          <Text style={styles.placeholderText}>
+            活動記録は近日公開予定です。{'\n'}あなたの活動履歴をまとめて{'\n'}振り返れるようになります。
+          </Text>
+        </View>
       )}
 
       {/* ══ ノートタブ ══ */}
@@ -901,7 +826,6 @@ function makeStyles(c: AppColors) {
 
     profileScroll: { flex: 1 },
     profileContent: { paddingHorizontal: 16, paddingBottom: 48 },
-    activityContent: { paddingBottom: 48 },
 
     errorState: { alignItems: 'center', paddingTop: 64, paddingHorizontal: 32 },
     errorEmoji: { fontSize: 40, marginBottom: 12 },
