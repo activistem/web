@@ -8,14 +8,22 @@ export default function SettingsScreen() {
   const { isDark, colors, toggleTheme } = useTheme();
 
   const handleLogout = () => {
+    console.log('[logout] ボタン押下');
     Alert.alert('ログアウト', 'ログアウトしますか？', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: 'ログアウト',
         style: 'destructive',
         onPress: async () => {
-          await supabase.auth.signOut({ scope: 'local' });
+          console.log('[logout] Alertで確認 → signOut開始');
+          const { error } = await supabase.auth.signOut({ scope: 'local' });
+          if (error) {
+            console.error('[logout] signOutエラー:', error.message);
+          } else {
+            console.log('[logout] signOut成功 → router.replace開始');
+          }
           router.replace('/(auth)/login');
+          console.log('[logout] router.replace呼び出し完了');
         },
       },
     ]);
