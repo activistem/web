@@ -557,15 +557,17 @@ export default function MyDataScreen() {
             <>
               {/* アバター + 名前 + 編集ボタン */}
               <View style={styles.viewHeader}>
+                <View style={styles.editBtnRow}>
+                  <TouchableOpacity style={styles.editBtn} onPress={startEdit}>
+                    <Text style={styles.editBtnText}>✏️ 編集</Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.avatarSection}>
                   <AvatarDisplay editable={false} />
                   <Text style={styles.profileName}>{profile.full_name}</Text>
                   <Text style={styles.profileRole}>{profile.role}</Text>
                   <Text style={styles.profileUsername}>@{profile.username}</Text>
                 </View>
-                <TouchableOpacity style={styles.editBtn} onPress={startEdit}>
-                  <Text style={styles.editBtnText}>✏️ 編集</Text>
-                </TouchableOpacity>
               </View>
 
               {/* 統計 */}
@@ -779,7 +781,7 @@ function makeStyles(c: AppColors) {
       borderWidth: 2, borderColor: c.bg,
     },
     avatarBadgeIcon: { fontSize: 14 },
-    avatarSection: { alignItems: 'center', paddingTop: 24, paddingBottom: 4 },
+    avatarSection: { alignItems: 'center', paddingTop: 8, paddingBottom: 4 },
     avatarHint: { color: c.muted, fontSize: 11, marginTop: 4 },
 
     statsRow: {
@@ -842,9 +844,9 @@ function makeStyles(c: AppColors) {
     },
     saveHeaderBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-    viewHeader: { position: 'relative' },
+    viewHeader: {},
+    editBtnRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 16 },
     editBtn: {
-      position: 'absolute', top: 24, right: 0,
       backgroundColor: c.inputBg, borderRadius: 20,
       paddingHorizontal: 14, paddingVertical: 6,
       borderWidth: 1, borderColor: c.glassBorder,
