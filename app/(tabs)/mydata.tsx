@@ -128,9 +128,8 @@ export default function MyDataScreen() {
   // ── データ取得 ──
   const fetchProfile = async () => {
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user }, error: authErr } = await supabase.auth.getUser();
+      console.log('[fetchProfile] user:', user?.id ?? 'null', authErr?.message ?? '');
       if (!user) {
         setLoadingProfile(false);
         return;
@@ -144,14 +143,18 @@ export default function MyDataScreen() {
           .eq('follower_id', user.id),
       ]);
 
+      console.log('[fetchProfile] data:', JSON.stringify(profileResult.data));
+      console.log('[fetchProfile] error:', profileResult.error?.message ?? 'none');
+
       if (profileResult.data) {
         const p = profileResult.data as Profile;
+        console.log('[fetchProfile] full_name:', p.full_name, '/ role:', p.role, '/ username:', p.username);
         setProfile(p);
         setEditName(p.full_name ?? '');
         setEditBio(p.bio ?? '');
         setEditLinks(p.links?.length ? p.links : ['']);
       } else {
-        console.error('[fetchProfile]', profileResult.error?.message);
+        console.error('[fetchProfile] no data:', profileResult.error?.message);
       }
       setFollowingCount(followingResult.count ?? 0);
     } catch (e: any) {
@@ -739,6 +742,7 @@ function makeStyles(c: AppColors) {
     settingsBtnText: { fontSize: 18 },
 
     tabsScroll: {
+      flexShrink: 0,
       borderBottomWidth: 1,
       borderBottomColor: c.cardBorder,
     },
