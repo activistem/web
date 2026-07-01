@@ -46,6 +46,13 @@ type Post = {
   image_urls: string[];
 };
 
+type Note = {
+  id: string;
+  date: string;
+  content: string;
+  created_at: string;
+};
+
 type Message = { role: 'ai' | 'user'; text: string };
 
 function timeAgo(iso: string): string {
@@ -56,6 +63,15 @@ function timeAgo(iso: string): string {
   const h = Math.floor(m / 60);
   if (h < 24) return `${h}時間前`;
   return `${Math.floor(h / 24)}日前`;
+}
+
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatNoteDate(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-');
+  return `${y}年${parseInt(m, 10)}月${parseInt(d, 10)}日`;
 }
 
 const QUICK_QUESTIONS = ['私の強みは？', '次のプロジェクトは？', '活動を振り返る'];
@@ -89,6 +105,13 @@ export default function MyDataScreen() {
   const [myPosts, setMyPosts] = useState<Post[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(false);
 
+  // ノート
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+  const [noteDate, setNoteDate] = useState(todayIso);
+  const [noteContent, setNoteContent] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
   const fetchMyPosts = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -105,6 +128,67 @@ export default function MyDataScreen() {
   useEffect(() => {
     if (activeTab === 'activity') fetchMyPosts();
   }, [activeTab, fetchMyPosts]);
+
+  const fetchNotes = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setLoadingNotes(true);
+    const { data, error } = await supabase
+      .from('notes')
+      .select('id, date, content, created_at')
+      .eq('user_id', user.id)
+      .order('date', { ascending: false });
+    if (!error && data) setNotes(data as Note[]);
+    setLoadingNotes(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'record') fetchNotes();
+  }, [activeTab, fetchNotes]);
+
+  const handleSaveNote = async () => {
+    if (!noteContent.trim()) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setSavingNote(true);
+    const { data, error } = await supabase
+      .from('notes')
+      .insert({ user_id: user.id, date: noteDate || todayIso(), content: noteContent.trim() })
+      .select('id, date, content, created_at')
+      .single();
+    setSavingNote(false);
+    if (error) {
+      if (error.code === '42P01') {
+        Alert.alert(
+          'テーブル未作成',
+          'Supabase SQL Editorで supabase_schema.sql を実行してください。\n\n（notes テーブルが必要です）'
+        );
+      } else {
+        Alert.alert('保存失敗', error.message);
+      }
+      return;
+    }
+    if (data) {
+      setNotes(prev => [data as Note, ...prev]);
+      setNoteContent('');
+      setNoteDate(todayIso());
+    }
+  };
+
+  const handleDeleteNote = (noteId: string) => {
+    const doDelete = async () => {
+      const { error } = await supabase.from('notes').delete().eq('id', noteId);
+      if (!error) setNotes(prev => prev.filter(n => n.id !== noteId));
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm('このノートを削除しますか？')) doDelete();
+    } else {
+      Alert.alert('削除', 'このノートを削除しますか？', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: doDelete },
+      ]);
+    }
+  };
 
   const handleDeletePost = useCallback(async (post: Post) => {
     const allUrls = post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : [];
@@ -720,12 +804,79 @@ export default function MyDataScreen() {
 
       {/* ══ ノートタブ ══ */}
       {activeTab === 'record' && (
-        <View style={styles.placeholder}>
-          <Text style={styles.placeholderEmoji}>✏️</Text>
-          <Text style={styles.placeholderText}>
-            ノートは近日公開予定です。{'\n'}ふと気づいたこと、考えたことを{'\n'}気軽にメモしていきましょう。
-          </Text>
-        </View>
+        <ScrollView
+          style={styles.profileScroll}
+          contentContainerStyle={styles.noteScrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {/* 新規入力テンプレート */}
+          <View style={styles.noteTemplate}>
+            <Text style={styles.noteTemplateTitle}>新しいノート</Text>
+            <View style={styles.noteDateRow}>
+              <Text style={styles.noteDateIcon}>📅</Text>
+              <TextInput
+                style={styles.noteDateInput}
+                value={noteDate}
+                onChangeText={setNoteDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.overlay30}
+                maxLength={10}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
+              />
+            </View>
+            <TextInput
+              style={styles.noteMemoInput}
+              value={noteContent}
+              onChangeText={setNoteContent}
+              placeholder="ふと気づいたこと、考えたことを…"
+              placeholderTextColor={colors.overlay30}
+              multiline
+              numberOfLines={5}
+              textAlignVertical="top"
+              maxLength={1000}
+            />
+            <View style={styles.noteSaveRow}>
+              <Text style={styles.noteCharCount}>{noteContent.length} / 1000</Text>
+              <TouchableOpacity
+                style={[styles.noteSaveBtn, (!noteContent.trim() || savingNote) && styles.noteSaveBtnDisabled]}
+                onPress={handleSaveNote}
+                disabled={!noteContent.trim() || savingNote}
+              >
+                {savingNote ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.noteSaveBtnText}>保存する</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* 過去のノート */}
+          {loadingNotes ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
+          ) : notes.length > 0 ? (
+            <>
+              <Text style={styles.notePastTitle}>過去のノート</Text>
+              {notes.map(note => (
+                <View key={note.id} style={styles.noteCard}>
+                  <View style={styles.noteCardHeader}>
+                    <Text style={styles.noteCardDate}>{formatNoteDate(note.date)}</Text>
+                    <TouchableOpacity
+                      onPress={() => handleDeleteNote(note.id)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.noteCardDeleteBtn}>削除</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={styles.noteCardContent}>{note.content}</Text>
+                </View>
+              ))}
+            </>
+          ) : null}
+        </ScrollView>
       )}
     </SafeAreaView>
   );
@@ -916,5 +1067,91 @@ function makeStyles(c: AppColors) {
     placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
     placeholderEmoji: { fontSize: 48, marginBottom: 16 },
     placeholderText: { color: c.muted, textAlign: 'center', fontSize: 14, lineHeight: 22 },
+
+    // ─── ノートタブ ───
+    noteScrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 48 },
+    noteTemplate: {
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 24,
+    },
+    noteTemplateTitle: {
+      color: c.text,
+      fontWeight: '700',
+      fontSize: 14,
+      marginBottom: 14,
+    },
+    noteDateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: c.inputBg,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+      gap: 8,
+    },
+    noteDateIcon: { fontSize: 16 },
+    noteDateInput: {
+      flex: 1,
+      color: c.text,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    noteMemoInput: {
+      backgroundColor: c.inputBg,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      color: c.text,
+      fontSize: 14,
+      lineHeight: 22,
+      minHeight: 110,
+      marginBottom: 10,
+    },
+    noteSaveRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+    },
+    noteCharCount: { color: c.faint, fontSize: 11 },
+    noteSaveBtn: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 20,
+      paddingVertical: 9,
+      borderRadius: 20,
+      minWidth: 90,
+      alignItems: 'center',
+    },
+    noteSaveBtnDisabled: { opacity: 0.4 },
+    noteSaveBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+    notePastTitle: {
+      color: c.overlay45,
+      fontSize: 11,
+      fontWeight: '700',
+      letterSpacing: 0.8,
+      textTransform: 'uppercase',
+      marginBottom: 10,
+    },
+    noteCard: {
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 10,
+    },
+    noteCardHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 8,
+    },
+    noteCardDate: { color: c.text, fontWeight: '700', fontSize: 13 },
+    noteCardDeleteBtn: { color: c.overlay30, fontSize: 12 },
+    noteCardContent: { color: c.textBody, fontSize: 14, lineHeight: 22 },
   });
 }

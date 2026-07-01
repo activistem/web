@@ -75,6 +75,15 @@ create table if not exists project_members (
   unique(project_id, user_id)
 );
 
+-- notes
+create table if not exists notes (
+  id         uuid        primary key default gen_random_uuid(),
+  user_id    uuid        not null references profiles(id) on delete cascade,
+  date       date        not null,
+  content    text        not null default '',
+  created_at timestamptz not null default now()
+);
+
 -- posts.image_url (後方互換) / image_urls (複数画像)
 alter table posts add column if not exists image_url  text;
 alter table posts add column if not exists image_urls text[] not null default '{}';
@@ -156,6 +165,8 @@ create policy "avatars_delete" on storage.objects
 -- 2. INDEXES
 -- ────────────────────────────────────────────────────────────
 
+create index if not exists idx_notes_user_id         on notes(user_id);
+create index if not exists idx_notes_date            on notes(date desc);
 create index if not exists idx_posts_user_id        on posts(user_id);
 create index if not exists idx_posts_created_at     on posts(created_at desc);
 create index if not exists idx_post_likes_post_id   on post_likes(post_id);
@@ -175,12 +186,13 @@ alter table post_likes      enable row level security;
 alter table connections     enable row level security;
 alter table projects        enable row level security;
 alter table project_members enable row level security;
+alter table notes           enable row level security;
 
 -- Drop existing policies before recreating (idempotent)
 do $$ declare r record; begin
   for r in select policyname, tablename from pg_policies
     where schemaname = 'public'
-    and tablename in ('profiles','posts','post_likes','connections','projects','project_members')
+    and tablename in ('profiles','posts','post_likes','connections','projects','project_members','notes')
   loop
     execute format('drop policy if exists %I on %I', r.policyname, r.tablename);
   end loop;
@@ -216,6 +228,11 @@ create policy "proj_delete"      on projects for delete  using (auth.uid() = own
 create policy "pm_select"        on project_members for select  using (true);
 create policy "pm_insert"        on project_members for insert  with check (auth.uid() = user_id);
 create policy "pm_delete"        on project_members for delete  using (auth.uid() = user_id);
+
+-- notes
+create policy "notes_select"     on notes for select  using (auth.uid() = user_id);
+create policy "notes_insert"     on notes for insert  with check (auth.uid() = user_id);
+create policy "notes_delete"     on notes for delete  using (auth.uid() = user_id);
 
 -- ────────────────────────────────────────────────────────────
 -- 4. TRIGGERS  (auto-maintain count columns)
