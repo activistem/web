@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { router } from 'expo-router';
 import AppHeader from '../../components/AppHeader';
 import UserCard from '../../components/UserCard';
 import { useColors } from '../../lib/ThemeContext';
@@ -26,6 +27,7 @@ type Profile = {
   location: string;
   bio: string;
   avatar_color: string;
+  avatar_url: string | null;
   tags: string[];
   followers_count: number;
   projects_count: number;
@@ -177,8 +179,10 @@ export default function ExploreScreen() {
                 bio={user.bio}
                 tags={user.tags ?? []}
                 avatarColor={user.avatar_color}
+                avatarUrl={user.avatar_url}
                 connected={connected.has(user.id)}
                 onConnect={() => handleConnect(user.id)}
+                onAvatarPress={() => router.push(`/profile/${user.id}`)}
               />
             ))
           )}

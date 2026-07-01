@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { useColors } from '../lib/ThemeContext';
 import { AppColors } from '../constants/Colors';
 
@@ -12,8 +12,10 @@ type UserCardProps = {
   bio?: string;
   tags?: string[];
   avatarColor?: string;
+  avatarUrl?: string | null;
   connected?: boolean;
   onConnect?: () => void;
+  onAvatarPress?: () => void;
 };
 
 export default function UserCard({
@@ -25,16 +27,32 @@ export default function UserCard({
   bio,
   tags = [],
   avatarColor,
+  avatarUrl,
   connected,
   onConnect,
+  onAvatarPress,
 }: UserCardProps) {
   const colors = useColors();
   const styles = useMemo(() => makeStyles(colors), [colors]);
+  const color = avatarColor ?? colors.primary;
+  const initial = name?.[0]?.toUpperCase() ?? '?';
 
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <View style={[styles.avatar, { backgroundColor: avatarColor ?? colors.primary }]} />
+        <TouchableOpacity
+          onPress={onAvatarPress}
+          activeOpacity={onAvatarPress ? 0.75 : 1}
+          style={[styles.avatar, { borderColor: color }]}
+        >
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImg} resizeMode="cover" />
+          ) : (
+            <View style={[styles.avatarFallback, { backgroundColor: color }]}>
+              <Text style={styles.avatarInitial}>{initial}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
         <View style={styles.info}>
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.role}>{role}</Text>
@@ -79,7 +97,10 @@ function makeStyles(c: AppColors) {
       marginBottom: 8,
     },
     row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
-    avatar: { width: 36, height: 36, borderRadius: 18, flexShrink: 0 },
+    avatar: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, flexShrink: 0, overflow: 'hidden' },
+    avatarImg: { width: '100%', height: '100%' },
+    avatarFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+    avatarInitial: { color: '#fff', fontWeight: '800', fontSize: 15 },
     info: { flex: 1 },
     name: { color: c.text, fontWeight: '800', fontSize: 13 },
     role: { color: c.muted, fontSize: 11 },
