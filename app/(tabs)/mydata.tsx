@@ -355,53 +355,7 @@ export default function MyDataScreen() {
   };
 
   const avatarInitial = (profile?.full_name ?? profile?.username ?? '?')[0];
-
-  // ── アバター UI ──
-  const AvatarDisplay = ({ editable }: { editable: boolean }) => (
-    <TouchableOpacity
-      style={styles.avatarWrap}
-      onPress={editable ? handleAvatarPick : undefined}
-      disabled={!editable || avatarUploading}
-      activeOpacity={editable ? 0.75 : 1}
-    >
-      {profile?.avatar_url ? (
-        <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
-      ) : (
-        <View style={[styles.avatarFallback, { backgroundColor: profile?.avatar_color ?? colors.primary }]}>
-          <Text style={styles.avatarInitial}>{avatarInitial}</Text>
-        </View>
-      )}
-      {editable && (
-        <View style={styles.avatarBadge}>
-          {avatarUploading ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.avatarBadgeIcon}>📷</Text>
-          )}
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-
-  // ── 統計行 ──
-  const StatsRow = () => (
-    <View style={styles.statsRow}>
-      <View style={styles.statItem}>
-        <Text style={styles.statVal}>{followingCount}</Text>
-        <Text style={styles.statLabel}>フォロー</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statVal}>{profile?.followers_count ?? 0}</Text>
-        <Text style={styles.statLabel}>フォロワー</Text>
-      </View>
-      <View style={styles.statDivider} />
-      <View style={styles.statItem}>
-        <Text style={styles.statVal}>{profile?.projects_count ?? 0}</Text>
-        <Text style={styles.statLabel}>プロジェクト</Text>
-      </View>
-    </View>
-  );
+  const avatarBg = profile?.avatar_color ?? colors.primary;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.bg }]} edges={['top']}>
@@ -414,12 +368,7 @@ export default function MyDataScreen() {
         }
       />
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.tabsScroll}
-        contentContainerStyle={styles.tabs}
-      >
+      <View style={styles.tabs}>
         {(['profile', 'activity', 'ai', 'record'] as const).map((tab) => (
           <TouchableOpacity
             key={tab}
@@ -431,7 +380,7 @@ export default function MyDataScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+      </View>
 
       {/* ══ プロフィールタブ ══ */}
       {activeTab === 'profile' && (
@@ -474,7 +423,25 @@ export default function MyDataScreen() {
 
               {/* アバター（変更可） */}
               <View style={styles.avatarSection}>
-                <AvatarDisplay editable />
+                <TouchableOpacity
+                  style={styles.avatarWrap}
+                  onPress={handleAvatarPick}
+                  disabled={avatarUploading}
+                  activeOpacity={0.75}
+                >
+                  {profile.avatar_url ? (
+                    <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+                  ) : (
+                    <View style={[styles.avatarFallback, { backgroundColor: avatarBg }]}>
+                      <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+                    </View>
+                  )}
+                  <View style={styles.avatarBadge}>
+                    {avatarUploading
+                      ? <ActivityIndicator color="#fff" size="small" />
+                      : <Text style={styles.avatarBadgeIcon}>📷</Text>}
+                  </View>
+                </TouchableOpacity>
                 <Text style={styles.avatarHint}>タップして画像を変更</Text>
               </View>
 
@@ -555,23 +522,50 @@ export default function MyDataScreen() {
           ) : (
             /* ─── 閲覧モード ─── */
             <>
-              {/* アバター + 名前 + 編集ボタン */}
-              <View style={styles.viewHeader}>
-                <View style={styles.editBtnRow}>
-                  <TouchableOpacity style={styles.editBtn} onPress={startEdit}>
-                    <Text style={styles.editBtnText}>✏️ 編集</Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.avatarSection}>
-                  <AvatarDisplay editable={false} />
-                  <Text style={styles.profileName}>{profile.full_name}</Text>
-                  <Text style={styles.profileRole}>{profile.role}</Text>
-                  <Text style={styles.profileUsername}>@{profile.username}</Text>
-                </View>
+              {/* 編集ボタン */}
+              <View style={styles.editBtnRow}>
+                <TouchableOpacity style={styles.editBtn} onPress={startEdit}>
+                  <Text style={styles.editBtnText}>✏️ 編集</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* アバター + 名前 */}
+              <View style={styles.avatarSection}>
+                <TouchableOpacity
+                  style={styles.avatarWrap}
+                  activeOpacity={1}
+                  disabled
+                >
+                  {profile.avatar_url ? (
+                    <Image source={{ uri: profile.avatar_url }} style={styles.avatarImg} />
+                  ) : (
+                    <View style={[styles.avatarFallback, { backgroundColor: avatarBg }]}>
+                      <Text style={styles.avatarInitial}>{avatarInitial}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.profileName}>{profile.full_name}</Text>
+                <Text style={styles.profileRole}>{profile.role}</Text>
+                <Text style={styles.profileUsername}>@{profile.username}</Text>
               </View>
 
               {/* 統計 */}
-              <StatsRow />
+              <View style={styles.statsRow}>
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>{followingCount}</Text>
+                  <Text style={styles.statLabel}>フォロー</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>{profile.followers_count ?? 0}</Text>
+                  <Text style={styles.statLabel}>フォロワー</Text>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statItem}>
+                  <Text style={styles.statVal}>{profile.projects_count ?? 0}</Text>
+                  <Text style={styles.statLabel}>プロジェクト</Text>
+                </View>
+              </View>
 
               {/* 自己紹介 */}
               <View style={styles.bioSection}>
@@ -743,14 +737,11 @@ function makeStyles(c: AppColors) {
     settingsBtn: { paddingHorizontal: 6, paddingVertical: 4 },
     settingsBtnText: { fontSize: 18 },
 
-    tabsScroll: {
-      flexShrink: 0,
-      borderBottomWidth: 1,
-      borderBottomColor: c.cardBorder,
-    },
     tabs: {
       flexDirection: 'row',
       paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: c.cardBorder,
     },
     tab: { paddingHorizontal: 10, paddingBottom: 10, paddingTop: 14, marginRight: 4 },
     tabActive: { borderBottomWidth: 2, borderBottomColor: c.primary },
@@ -844,7 +835,6 @@ function makeStyles(c: AppColors) {
     },
     saveHeaderBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
-    viewHeader: {},
     editBtnRow: { flexDirection: 'row', justifyContent: 'flex-end', paddingTop: 16 },
     editBtn: {
       backgroundColor: c.inputBg, borderRadius: 20,
