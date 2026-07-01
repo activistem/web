@@ -273,17 +273,6 @@ export default function BroadcastScreen() {
     }
   };
 
-  const handleLike = async (postId: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-    const { error } = await supabase.from('post_likes').insert({ post_id: postId, user_id: user.id });
-    if (!error) {
-      setPosts((prev) =>
-        prev.map((p) => p.id === postId ? { ...p, likes_count: p.likes_count + 1 } : p)
-      );
-    }
-  };
-
   const canPost = postText.trim().length > 0 && !posting;
 
   const postCreationBox = (
@@ -376,15 +365,11 @@ export default function BroadcastScreen() {
             timeAgo={timeAgo(post.created_at)}
             body={post.content}
             hashtags={post.hashtags}
-            likes={post.likes_count}
-            comments={post.comments_count}
-            shares={post.shares_count}
             avatarColor={post.profiles?.avatar_color ?? colors.primary}
             avatarUrl={post.profiles?.avatar_url ?? null}
             authorId={post.user_id}
             currentUserId={currentUserId ?? undefined}
             imageUrls={post.image_urls?.length ? post.image_urls : post.image_url ? [post.image_url] : []}
-            onLike={() => handleLike(post.id)}
             onDelete={currentUserId && post.user_id === currentUserId
               ? () => handleDelete(post)
               : undefined}

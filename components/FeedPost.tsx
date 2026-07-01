@@ -15,13 +15,8 @@ type FeedPostProps = {
   timeAgo: string;
   body: string;
   hashtags?: string[];
-  likes?: number;
-  comments?: number;
-  shares?: number;
   avatarColor?: string;
   avatarUrl?: string | null;
-  liked?: boolean;
-  onLike?: () => void;
   onDelete?: () => void;
   authorId?: string;
   currentUserId?: string;
@@ -129,13 +124,8 @@ const FeedPost = React.memo(function FeedPost({
   timeAgo,
   body,
   hashtags = [],
-  likes = 0,
-  comments = 0,
-  shares = 0,
   avatarColor,
   avatarUrl,
-  liked = false,
-  onLike,
   onDelete,
   authorId,
   currentUserId,
@@ -200,26 +190,6 @@ const FeedPost = React.memo(function FeedPost({
       {displayUrls.length > 0 && (
         <ImageCarousel urls={displayUrls} visible={visible} />
       )}
-
-      {/* アクション */}
-      <View style={styles.actions}>
-        <TouchableOpacity style={styles.actionBtn} onPress={onLike} activeOpacity={0.7}>
-          <Text style={[styles.actionIcon, liked && styles.actionIconLiked]}>
-            {liked ? '❤️' : '♡'}
-          </Text>
-          {likes > 0 && (
-            <Text style={[styles.actionCount, liked && styles.actionCountLiked]}>{likes}</Text>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
-          <Text style={styles.actionIcon}>💬</Text>
-          {comments > 0 && <Text style={styles.actionCount}>{comments}</Text>}
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
-          <Text style={styles.actionIcon}>✈️</Text>
-          {shares > 0 && <Text style={styles.actionCount}>{shares}</Text>}
-        </TouchableOpacity>
-      </View>
 
       {/* キャプション */}
       {(body.length > 0 || hashtags.length > 0) && (
@@ -345,19 +315,6 @@ function makeStyles(c: AppColors) {
     },
     menuItemDelete: { color: '#FF4D6A', fontSize: 16, fontWeight: '600' },
     menuItemCancel: { color: c.overlay45, fontSize: 15 },
-
-    actions: {
-      flexDirection: 'row',
-      gap: 20,
-      paddingHorizontal: PAD,
-      paddingTop: 10,
-      paddingBottom: 4,
-    },
-    actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-    actionIcon: { fontSize: 20 },
-    actionIconLiked: { color: '#FF4D6A' },
-    actionCount: { color: c.muted, fontSize: 13, fontWeight: '600' },
-    actionCountLiked: { color: '#FF4D6A' },
 
     captionArea: { paddingHorizontal: PAD, paddingBottom: 10, gap: 4 },
     captionText: { color: c.textBody, fontSize: 13, lineHeight: 19 },
