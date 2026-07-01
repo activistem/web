@@ -1,4 +1,4 @@
-import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, Switch, StyleSheet, TouchableOpacity, Alert, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { useTheme } from '../lib/ThemeContext';
@@ -7,26 +7,27 @@ import { supabase } from '../lib/supabase';
 export default function SettingsScreen() {
   const { isDark, colors, toggleTheme } = useTheme();
 
+  const doLogout = async () => {
+    console.log('[logout] signOut開始');
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      console.error('[logout] signOutエラー:', error.message);
+    } else {
+      console.log('[logout] signOut成功 → router.replace');
+    }
+    router.replace('/(auth)/login');
+  };
+
   const handleLogout = () => {
     console.log('[logout] ボタン押下');
-    Alert.alert('ログアウト', 'ログアウトしますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: 'ログアウト',
-        style: 'destructive',
-        onPress: async () => {
-          console.log('[logout] Alertで確認 → signOut開始');
-          const { error } = await supabase.auth.signOut({ scope: 'local' });
-          if (error) {
-            console.error('[logout] signOutエラー:', error.message);
-          } else {
-            console.log('[logout] signOut成功 → router.replace開始');
-          }
-          router.replace('/(auth)/login');
-          console.log('[logout] router.replace呼び出し完了');
-        },
-      },
-    ]);
+    if (Platform.OS === 'web') {
+      if (window.confirm('ログアウトしますか？')) doLogout();
+    } else {
+      Alert.alert('ログアウト', 'ログアウトしますか？', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: 'ログアウト', style: 'destructive', onPress: doLogout },
+      ]);
+    }
   };
 
   return (
