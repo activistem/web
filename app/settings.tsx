@@ -14,7 +14,8 @@ export default function SettingsScreen() {
         text: 'ログアウト',
         style: 'destructive',
         onPress: async () => {
-          await supabase.auth.signOut();
+          await supabase.auth.signOut({ scope: 'local' });
+          router.replace('/(auth)/login');
         },
       },
     ]);
