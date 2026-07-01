@@ -105,7 +105,7 @@ export default function BroadcastScreen() {
     setVisibleIds(new Set(viewableItems.map((v: any) => v.key)));
   }).current;
 
-  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 10, minimumViewTime: 50 }).current;
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 10, minimumViewTime: 0 }).current;
 
   const fetchPosts = useCallback(async () => {
     // image_urls を明示的に含めることで、カラムが存在しない場合は error になりフォールバックへ進む
@@ -172,6 +172,11 @@ export default function BroadcastScreen() {
     }
 
     setPosts(prev => prev.filter(p => p.id !== post.id));
+    setVisibleIds(prev => {
+      const next = new Set(prev);
+      next.delete(post.id);
+      return next;
+    });
   }, []);
 
   const handlePickImage = async () => {
