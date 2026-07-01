@@ -1,5 +1,13 @@
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Colors } from '../constants/Colors';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Dimensions, Image, Modal, Pressable } from 'react-native';
+import { router } from 'expo-router';
+import { useColors } from '../lib/ThemeContext';
+import { AppColors } from '../constants/Colors';
+
+const SCREEN_W = Dimensions.get('window').width;
+const CARD_W = Math.min(SCREEN_W, 500);
+const PAD = 14;
+const DEFAULT_H = Math.round(CARD_W * 0.75);
 
 type FeedPostProps = {
   authorName: string;
@@ -11,9 +19,111 @@ type FeedPostProps = {
   comments?: number;
   shares?: number;
   avatarColor?: string;
+  avatarUrl?: string | null;
+  liked?: boolean;
+  onLike?: () => void;
+  onDelete?: () => void;
+  authorId?: string;
+  currentUserId?: string;
+  imageUrl?: string;
+  imageUrls?: string[];
+  visible?: boolean;
 };
 
-export default function FeedPost({
+function toThumb(url: string, width = 800): string {
+  const base = url.replace(
+    '/storage/v1/object/public/',
+    '/storage/v1/render/image/public/'
+  );
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}width=${width}&resize=contain&quality=80`;
+}
+
+function ImageCarousel({ urls, visible }: { urls: string[]; visible: boolean }) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [heights, setHeights] = useState<number[]>(() => urls.map(() => DEFAULT_H));
+  const multi = urls.length > 1;
+
+  useEffect(() => {
+    let active = true;
+    setHeights(urls.map(() => DEFAULT_H));
+    urls.forEach((url, i) => {
+      Image.getSize(
+        url,
+        (w, h) => {
+          if (!active || w <= 0 || h <= 0) return;
+          setHeights(prev => {
+            const next = [...prev];
+            next[i] = Math.round(CARD_W * h / w);
+            return next;
+          });
+        },
+        () => {},
+      );
+    });
+    return () => { active = false; };
+  }, [urls.join('|')]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const containerH = heights[activeIndex] ?? DEFAULT_H;
+
+  if (!visible) {
+    return <View style={{ width: CARD_W, height: containerH, backgroundColor: 'rgba(0,0,0,0.15)' }} />;
+  }
+
+  return (
+    <View style={{ width: CARD_W, height: containerH, backgroundColor: '#000' }}>
+      <ScrollView
+        horizontal
+        pagingEnabled
+        scrollEnabled={multi}
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        decelerationRate="fast"
+        onMomentumScrollEnd={e => {
+          const idx = Math.round(e.nativeEvent.contentOffset.x / CARD_W);
+          setActiveIndex(idx);
+        }}
+        style={{ width: CARD_W, height: containerH }}
+      >
+        {urls.map((url, i) => (
+          <View
+            key={i}
+            style={{ width: CARD_W, height: containerH, justifyContent: 'center', alignItems: 'center' }}
+          >
+            <Image
+              source={{ uri: toThumb(url) }}
+              style={{ width: CARD_W, height: containerH }}
+              resizeMode="contain"
+            />
+          </View>
+        ))}
+      </ScrollView>
+
+      {multi && (
+        <View style={dotStyles.overlay}>
+          <View style={dotStyles.row}>
+            {urls.map((_, i) => (
+              <View
+                key={i}
+                style={[dotStyles.dot, i === activeIndex ? dotStyles.dotActive : dotStyles.dotInactive]}
+              />
+            ))}
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const dotStyles = StyleSheet.create({
+  overlay: { position: 'absolute', bottom: 10, left: 0, right: 0, alignItems: 'center' },
+  row: { flexDirection: 'row', gap: 5, alignItems: 'center' },
+  dot: { height: 6, borderRadius: 3 },
+  dotActive: { width: 18, backgroundColor: '#fff' },
+  dotInactive: { width: 6, backgroundColor: 'rgba(255,255,255,0.5)' },
+});
+
+const FeedPost = React.memo(function FeedPost({
   authorName,
   authorRole,
   timeAgo,
@@ -22,109 +132,236 @@ export default function FeedPost({
   likes = 0,
   comments = 0,
   shares = 0,
-  avatarColor = Colors.primary,
+  avatarColor,
+  avatarUrl,
+  liked = false,
+  onLike,
+  onDelete,
+  authorId,
+  currentUserId,
+  imageUrl,
+  imageUrls,
+  visible = true,
 }: FeedPostProps) {
+  const colors = useColors();
+  const [menuVisible, setMenuVisible] = useState(false);
+  const displayUrls = imageUrls?.length ? imageUrls : imageUrl ? [imageUrl] : [];
+  const ringColor = avatarColor ?? colors.primary;
+
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
+  const handleAvatarPress = () => {
+    if (!authorId) return;
+    if (authorId === currentUserId) {
+      router.navigate('/(tabs)/mydata');
+    } else {
+      router.push(`/profile/${authorId}`);
+    }
+  };
+
   return (
     <View style={styles.card}>
+      {/* ヘッダー */}
       <View style={styles.header}>
-        <View style={[styles.avatar, { backgroundColor: avatarColor }]} />
-        <View style={styles.authorInfo}>
-          <Text style={styles.authorName}>{authorName}</Text>
-          <Text style={styles.authorRole}>{authorRole}</Text>
+        <TouchableOpacity
+          style={[styles.avatarRing, { borderColor: ringColor }]}
+          onPress={handleAvatarPress}
+          activeOpacity={authorId ? 0.75 : 1}
+        >
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImg} resizeMode="cover" />
+          ) : (
+            <View style={[styles.avatarFallback, { backgroundColor: ringColor }]}>
+              <Text style={styles.avatarInitial}>
+                {authorName[0]?.toUpperCase() ?? '?'}
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.authorName} numberOfLines={1}>{authorName}</Text>
+          <Text style={styles.authorSub} numberOfLines={1}>
+            {[authorRole, timeAgo].filter(Boolean).join(' · ')}
+          </Text>
         </View>
-        <Text style={styles.time}>{timeAgo}</Text>
+        {onDelete && (
+          <TouchableOpacity
+            style={styles.menuBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            activeOpacity={0.6}
+            onPress={() => setMenuVisible(true)}
+          >
+            <Text style={styles.menuBtnText}>⋮</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      <Text style={styles.body}>{body}</Text>
-      {hashtags.length > 0 && (
-        <View style={styles.hashtags}>
-          {hashtags.map((tag) => (
-            <Text key={tag} style={styles.hashtag}>
-              #{tag}
+
+      {/* 画像カルーセル */}
+      {displayUrls.length > 0 && (
+        <ImageCarousel urls={displayUrls} visible={visible} />
+      )}
+
+      {/* アクション */}
+      <View style={styles.actions}>
+        <TouchableOpacity style={styles.actionBtn} onPress={onLike} activeOpacity={0.7}>
+          <Text style={[styles.actionIcon, liked && styles.actionIconLiked]}>
+            {liked ? '❤️' : '♡'}
+          </Text>
+          {likes > 0 && (
+            <Text style={[styles.actionCount, liked && styles.actionCountLiked]}>{likes}</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Text style={styles.actionIcon}>💬</Text>
+          {comments > 0 && <Text style={styles.actionCount}>{comments}</Text>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+          <Text style={styles.actionIcon}>✈️</Text>
+          {shares > 0 && <Text style={styles.actionCount}>{shares}</Text>}
+        </TouchableOpacity>
+      </View>
+
+      {/* キャプション */}
+      {(body.length > 0 || hashtags.length > 0) && (
+        <View style={styles.captionArea}>
+          {body.length > 0 && (
+            <Text style={styles.captionText}>
+              <Text style={styles.captionAuthor}>{authorName} </Text>
+              {body}
             </Text>
-          ))}
+          )}
+          {hashtags.length > 0 && (
+            <Text style={styles.hashtagLine}>
+              {hashtags.map(t => `#${t}`).join(' ')}
+            </Text>
+          )}
         </View>
       )}
-      <View style={styles.stats}>
-        <TouchableOpacity style={styles.statItem}>
-          <Text style={styles.statText}>♡ {likes}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.statItem}>
-          <Text style={styles.statText}>💬 {comments}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.statItem}>
-          <Text style={styles.statText}>🔄 {shares}</Text>
-        </TouchableOpacity>
-      </View>
+
+      {/* 削除メニュー（ボトムシート） */}
+      {onDelete && (
+        <Modal
+          visible={menuVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setMenuVisible(false)}
+        >
+          <View style={styles.menuOverlay}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => setMenuVisible(false)}
+            />
+            <Pressable style={styles.menuSheet} onPress={() => {}}>
+              <View style={styles.menuHandle} />
+              <TouchableOpacity
+                style={styles.menuItemRow}
+                activeOpacity={0.7}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onDelete();
+                }}
+              >
+                <Text style={styles.menuItemDelete}>削除する</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.menuItemRow}
+                activeOpacity={0.7}
+                onPress={() => setMenuVisible(false)}
+              >
+                <Text style={styles.menuItemCancel}>キャンセル</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </View>
+        </Modal>
+      )}
     </View>
   );
-}
-
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    flexShrink: 0,
-  },
-  authorInfo: {
-    flex: 1,
-  },
-  authorName: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  authorRole: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 11,
-  },
-  time: {
-    color: 'rgba(255,255,255,0.25)',
-    fontSize: 11,
-  },
-  body: {
-    color: 'rgba(255,255,255,0.72)',
-    fontSize: 13,
-    lineHeight: 20,
-    marginBottom: 8,
-  },
-  hashtags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 8,
-  },
-  hashtag: {
-    color: Colors.primary2,
-    fontSize: 12,
-  },
-  stats: {
-    flexDirection: 'row',
-    gap: 16,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(255,255,255,0.06)',
-    paddingTop: 8,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statText: {
-    color: 'rgba(255,255,255,0.3)',
-    fontSize: 12,
-  },
 });
+
+export default FeedPost;
+
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    card: {
+      borderBottomWidth: 1,
+      borderBottomColor: c.divider,
+      marginBottom: 6,
+      paddingBottom: 4,
+    },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: PAD,
+      paddingVertical: 10,
+    },
+    avatarRing: {
+      width: 40,
+      height: 40,
+      borderRadius: 20,
+      borderWidth: 2,
+      padding: 2,
+      flexShrink: 0,
+    },
+    avatarImg: { width: '100%', height: '100%', borderRadius: 16 },
+    avatarFallback: {
+      flex: 1,
+      borderRadius: 16,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    avatarInitial: { color: '#fff', fontWeight: '800', fontSize: 14 },
+    authorName: { color: c.text, fontWeight: '700', fontSize: 13 },
+    authorSub: { color: c.mutedLight, fontSize: 11, marginTop: 1 },
+    menuBtn: { paddingHorizontal: 6, paddingVertical: 2, marginLeft: 4 },
+    menuBtnText: { color: c.overlay45, fontSize: 22, lineHeight: 24, letterSpacing: 0 },
+
+    menuOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'flex-end',
+    },
+    menuSheet: {
+      backgroundColor: c.surface,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      paddingBottom: 40,
+    },
+    menuHandle: {
+      width: 40,
+      height: 4,
+      backgroundColor: c.overlay45,
+      borderRadius: 2,
+      alignSelf: 'center',
+      marginTop: 10,
+      marginBottom: 6,
+    },
+    menuItemRow: {
+      paddingVertical: 17,
+      paddingHorizontal: 24,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: c.cardBorder,
+      alignItems: 'center',
+    },
+    menuItemDelete: { color: '#FF4D6A', fontSize: 16, fontWeight: '600' },
+    menuItemCancel: { color: c.overlay45, fontSize: 15 },
+
+    actions: {
+      flexDirection: 'row',
+      gap: 20,
+      paddingHorizontal: PAD,
+      paddingTop: 10,
+      paddingBottom: 4,
+    },
+    actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    actionIcon: { fontSize: 20 },
+    actionIconLiked: { color: '#FF4D6A' },
+    actionCount: { color: c.muted, fontSize: 13, fontWeight: '600' },
+    actionCountLiked: { color: '#FF4D6A' },
+
+    captionArea: { paddingHorizontal: PAD, paddingBottom: 10, gap: 4 },
+    captionText: { color: c.textBody, fontSize: 13, lineHeight: 19 },
+    captionAuthor: { fontWeight: '700', color: c.text },
+    hashtagLine: { color: c.primary2, fontSize: 12, lineHeight: 18 },
+  });
+}

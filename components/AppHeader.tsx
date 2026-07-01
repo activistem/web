@@ -1,5 +1,5 @@
 import { View, Text, StyleSheet } from 'react-native';
-import { Colors } from '../constants/Colors';
+import { useColors } from '../lib/ThemeContext';
 
 type Props = {
   title: string;
@@ -8,14 +8,15 @@ type Props = {
 };
 
 export default function AppHeader({ title, subtitle, right }: Props) {
+  const colors = useColors();
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: colors.headerBg, borderBottomColor: `${colors.primary}33` }]}>
       <View style={styles.logo}>
-        <View style={styles.logoIcon}>
+        <View style={[styles.logoIcon, { backgroundColor: colors.primary }]}>
           <Text style={styles.logoIconText}>A</Text>
         </View>
-        <Text style={styles.logoText}>
-          Activis<Text style={styles.logoAccent}>tem!</Text>
+        <Text style={[styles.logoText, { color: colors.text }]}>
+          Activis<Text style={{ color: colors.green2 }}>tem!</Text>
         </Text>
       </View>
       {right}
@@ -31,33 +32,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(124,91,245,0.2)',
-    backgroundColor: 'rgba(8,7,20,0.9)',
   },
-  logo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
+  logo: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   logoIcon: {
     width: 28,
     height: 28,
     borderRadius: 8,
-    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logoIconText: {
-    color: '#fff',
-    fontWeight: '900',
-    fontSize: 14,
-  },
-  logoText: {
-    color: '#fff',
-    fontWeight: '900',
-    fontSize: 16,
-  },
-  logoAccent: {
-    color: Colors.green2,
-  },
+  logoIconText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  logoText: { fontWeight: '900', fontSize: 16 },
 });

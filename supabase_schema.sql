@@ -75,6 +75,83 @@ create table if not exists project_members (
   unique(project_id, user_id)
 );
 
+-- posts.image_url (後方互換) / image_urls (複数画像)
+alter table posts add column if not exists image_url  text;
+alter table posts add column if not exists image_urls text[] not null default '{}';
+
+-- profiles.avatar_url / links (プロフィール画像・複数リンク)
+alter table profiles add column if not exists avatar_url text;
+alter table profiles add column if not exists website_url text;
+alter table profiles add column if not exists links text[] not null default '{}';
+
+-- ────────────────────────────────────────────────────────────
+-- 1-b. STORAGE  (post-images / avatars bucket)
+-- ────────────────────────────────────────────────────────────
+
+insert into storage.buckets (id, name, public)
+values ('post-images', 'post-images', true)
+on conflict (id) do nothing;
+
+-- Storage RLS — 既存ポリシーを一旦削除してから再作成
+do $$ declare r record; begin
+  for r in select policyname from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+    and policyname like 'post_images_%'
+  loop
+    execute format('drop policy if exists %I on storage.objects', r.policyname);
+  end loop;
+end $$;
+
+create policy "post_images_select" on storage.objects
+  for select using (bucket_id = 'post-images');
+
+create policy "post_images_insert" on storage.objects
+  for insert with check (
+    bucket_id = 'post-images'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "post_images_delete" on storage.objects
+  for delete using (
+    bucket_id = 'post-images'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+-- avatars バケット
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+do $$ declare r record; begin
+  for r in select policyname from pg_policies
+    where schemaname = 'storage' and tablename = 'objects'
+    and policyname like 'avatars_%'
+  loop
+    execute format('drop policy if exists %I on storage.objects', r.policyname);
+  end loop;
+end $$;
+
+create policy "avatars_select" on storage.objects
+  for select using (bucket_id = 'avatars');
+
+create policy "avatars_insert" on storage.objects
+  for insert with check (
+    bucket_id = 'avatars'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "avatars_update" on storage.objects
+  for update using (
+    bucket_id = 'avatars'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+create policy "avatars_delete" on storage.objects
+  for delete using (
+    bucket_id = 'avatars'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
 -- ────────────────────────────────────────────────────────────
 -- 2. INDEXES
 -- ────────────────────────────────────────────────────────────

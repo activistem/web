@@ -1,5 +1,7 @@
+import { useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Colors } from '../constants/Colors';
+import { useColors } from '../lib/ThemeContext';
+import { AppColors } from '../constants/Colors';
 
 type UserCardProps = {
   name: string;
@@ -22,14 +24,17 @@ export default function UserCard({
   projects,
   bio,
   tags = [],
-  avatarColor = Colors.primary,
+  avatarColor,
   connected,
   onConnect,
 }: UserCardProps) {
+  const colors = useColors();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+
   return (
     <View style={styles.card}>
       <View style={styles.row}>
-        <View style={[styles.avatar, { backgroundColor: avatarColor }]} />
+        <View style={[styles.avatar, { backgroundColor: avatarColor ?? colors.primary }]} />
         <View style={styles.info}>
           <Text style={styles.name}>{name}</Text>
           <Text style={styles.role}>{role}</Text>
@@ -63,78 +68,33 @@ export default function UserCard({
   );
 }
 
-const styles = StyleSheet.create({
-  card: {
-    backgroundColor: Colors.card,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 6,
-  },
-  avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    flexShrink: 0,
-  },
-  info: {
-    flex: 1,
-  },
-  name: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 13,
-  },
-  role: {
-    color: 'rgba(255,255,255,0.4)',
-    fontSize: 11,
-  },
-  connectBtn: {
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
-  },
-  connectBtnText: {
-    color: '#fff',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  connectedText: {
-    color: 'rgba(255,255,255,0.35)',
-    fontSize: 11,
-  },
-  meta: {
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.3)',
-    marginBottom: 4,
-  },
-  bio: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.5)',
-    lineHeight: 18,
-    marginBottom: 6,
-  },
-  tags: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  tag: {
-    backgroundColor: 'rgba(255,255,255,0.07)',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  tagText: {
-    color: 'rgba(255,255,255,0.6)',
-    fontSize: 11,
-  },
-});
+function makeStyles(c: AppColors) {
+  return StyleSheet.create({
+    card: {
+      backgroundColor: c.card,
+      borderWidth: 1,
+      borderColor: c.cardBorder,
+      borderRadius: 12,
+      padding: 12,
+      marginBottom: 8,
+    },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 6 },
+    avatar: { width: 36, height: 36, borderRadius: 18, flexShrink: 0 },
+    info: { flex: 1 },
+    name: { color: c.text, fontWeight: '800', fontSize: 13 },
+    role: { color: c.muted, fontSize: 11 },
+    connectBtn: {
+      backgroundColor: c.primary,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 8,
+    },
+    connectBtnText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+    connectedText: { color: c.overlay30, fontSize: 11 },
+    meta: { fontSize: 11, color: c.overlay30, marginBottom: 4 },
+    bio: { fontSize: 12, color: c.muted, lineHeight: 18, marginBottom: 6 },
+    tags: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+    tag: { backgroundColor: c.inputBg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+    tagText: { color: c.muted, fontSize: 11 },
+  });
+}
