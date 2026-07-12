@@ -13,7 +13,7 @@ import {
   Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
@@ -42,7 +42,19 @@ type Note = {
   created_at: string;
 };
 
-type Message = { role: 'ai' | 'user'; text: string };
+type ChatSession = {
+  id: string;
+  title: string;
+  created_at: string;
+};
+
+type ChatMessage = {
+  id: string;
+  session_id: string;
+  role: 'user' | 'model';
+  content: string;
+  created_at: string;
+};
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -53,26 +65,51 @@ function formatNoteDate(dateStr: string): string {
   return `${y}年${parseInt(m, 10)}月${parseInt(d, 10)}日`;
 }
 
-const QUICK_QUESTIONS = ['私の強みは？', '次のプロジェクトは？', '活動を振り返る'];
+function formatSessionDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
 
-const AI_RESPONSES: Record<string, string> = {
-  '私の強みは？':
-    'あなたのプロフィールと活動記録を分析しました。\n\n✨ 強み：\n・継続的な活動発信力\n・コミュニティ構築への情熱\n・課題解決へのコミット\n\nこの調子でプロフィールを充実させると、より多くの仲間が集まります！',
-  '次のプロジェクトは？':
-    'あなたの活動履歴をもとにおすすめを分析しました。\n\n📁 おすすめ：\n・あなたの関心タグに近いプロジェクトを「プロジェクト」タブで探してみましょう\n・まだプロジェクトがない分野に挑戦するのもおすすめです！',
-  '活動を振り返る':
-    '直近30日間の活動サマリーです。\n\n📊 活動サマリー：\n・アカウントを活用するほど、より詳細な分析が可能になります\n・継続的な投稿・つながりの構築が大切です\n\nこれからの活躍を応援しています 🎉',
-};
+async function callGemini(history: ChatMessage[], userText: string): Promise<string> {
+  const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY ?? '';
+  if (!apiKey || apiKey === 'your-gemini-api-key-here') {
+    throw new Error('Gemini APIキーが未設定です。.env.local の EXPO_PUBLIC_GEMINI_API_KEY を設定してください。');
+  }
+  const contents = [
+    ...history.map(m => ({ role: m.role, parts: [{ text: m.content }] })),
+    { role: 'user', parts: [{ text: userText }] },
+  ];
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents,
+        systemInstruction: {
+          parts: [{ text: 'あなたはActivistem!というソーシャルアクションアプリのAIアシスタントです。ユーザーの社会活動・プロジェクト・自己成長をサポートしてください。温かく、具体的に、日本語で回答してください。' }],
+        },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 1000 },
+      }),
+    }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message);
+  return data.candidates?.[0]?.content?.parts?.[0]?.text ?? 'エラーが発生しました。';
+}
 
 export default function MyDataScreen() {
   const [activeTab, setActiveTab] = useState<'profile' | 'activity' | 'ai' | 'record'>('profile');
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: 'ai',
-      text: 'こんにちは！プロフィール・プロジェクト記録・内省メモをもとに、あなたの活動を分析・サポートします。何でも聞いてください。',
-    },
-  ]);
-  const [input, setInput] = useState('');
+  // AIチャット
+  const chatScrollRef = useRef<ScrollView | null>(null);
+  const [chatMode, setChatMode] = useState<'list' | 'chat'>('list');
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [currentSession, setCurrentSession] = useState<ChatSession | null>(null);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [loadingChatMessages, setLoadingChatMessages] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [isAiThinking, setIsAiThinking] = useState(false);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -372,17 +409,127 @@ export default function MyDataScreen() {
   };
 
   // ── AI チャット ──
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return;
-    const aiResponse =
-      AI_RESPONSES[text] ??
-      `「${text}」について分析中です...\n\nこの質問への詳細な回答機能は開発中です。お楽しみに！`;
-    setMessages((prev) => [
-      ...prev,
-      { role: 'user', text },
-      { role: 'ai', text: aiResponse },
-    ]);
-    setInput('');
+  const fetchSessions = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setLoadingSessions(true);
+    const { data } = await supabase
+      .from('chat_sessions')
+      .select('id, title, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    if (data) setSessions(data as ChatSession[]);
+    setLoadingSessions(false);
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'ai') fetchSessions();
+  }, [activeTab, fetchSessions]);
+
+  const fetchChatMessages = useCallback(async (sessionId: string) => {
+    setLoadingChatMessages(true);
+    const { data } = await supabase
+      .from('chat_messages')
+      .select('id, session_id, role, content, created_at')
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: true });
+    if (data) setChatMessages(data as ChatMessage[]);
+    setLoadingChatMessages(false);
+  }, []);
+
+  const openSession = async (session: ChatSession) => {
+    setCurrentSession(session);
+    setChatMessages([]);
+    setChatMode('chat');
+    await fetchChatMessages(session.id);
+  };
+
+  const startNewChat = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('chat_sessions')
+      .insert({ user_id: user.id, title: '新しい会話' })
+      .select('id, title, created_at')
+      .single();
+    if (error) {
+      if (error.code === '42P01') {
+        Alert.alert('テーブル未作成', 'Supabase SQL Editorで supabase_schema.sql を実行してください。');
+      } else {
+        Alert.alert('エラー', error.message);
+      }
+      return;
+    }
+    if (data) {
+      const session = data as ChatSession;
+      setSessions(prev => [session, ...prev]);
+      setCurrentSession(session);
+      setChatMessages([]);
+      setChatMode('chat');
+    }
+  };
+
+  const sendChatMessage = async () => {
+    if (!chatInput.trim() || isAiThinking || !currentSession) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    const text = chatInput.trim();
+    setChatInput('');
+    setIsAiThinking(true);
+
+    const { data: userMsgData } = await supabase
+      .from('chat_messages')
+      .insert({ session_id: currentSession.id, user_id: user.id, role: 'user', content: text })
+      .select('id, session_id, role, content, created_at')
+      .single();
+
+    const updatedMessages = userMsgData
+      ? [...chatMessages, userMsgData as ChatMessage]
+      : chatMessages;
+    setChatMessages(updatedMessages);
+
+    if (chatMessages.length === 0) {
+      const newTitle = text.length > 20 ? text.slice(0, 20) + '…' : text;
+      await supabase.from('chat_sessions').update({ title: newTitle }).eq('id', currentSession.id);
+      setCurrentSession(prev => prev ? { ...prev, title: newTitle } : null);
+      setSessions(prev => prev.map(s => s.id === currentSession.id ? { ...s, title: newTitle } : s));
+    }
+
+    try {
+      const aiText = await callGemini(updatedMessages, text);
+      const { data: aiMsgData } = await supabase
+        .from('chat_messages')
+        .insert({ session_id: currentSession.id, user_id: user.id, role: 'model', content: aiText })
+        .select('id, session_id, role, content, created_at')
+        .single();
+      if (aiMsgData) setChatMessages(prev => [...prev, aiMsgData as ChatMessage]);
+    } catch (e: any) {
+      const errText = `エラー: ${e.message}`;
+      const { data: errMsgData } = await supabase
+        .from('chat_messages')
+        .insert({ session_id: currentSession.id, user_id: user.id, role: 'model', content: errText })
+        .select('id, session_id, role, content, created_at')
+        .single();
+      if (errMsgData) setChatMessages(prev => [...prev, errMsgData as ChatMessage]);
+    } finally {
+      setIsAiThinking(false);
+    }
+  };
+
+  const deleteSession = (sessionId: string) => {
+    const doDelete = async () => {
+      await supabase.from('chat_sessions').delete().eq('id', sessionId);
+      setSessions(prev => prev.filter(s => s.id !== sessionId));
+    };
+    if (Platform.OS === 'web') {
+      if (window.confirm('この会話を削除しますか？')) doDelete();
+    } else {
+      Alert.alert('削除', 'この会話を削除しますか？', [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '削除', style: 'destructive', onPress: doDelete },
+      ]);
+    }
   };
 
   const avatarInitial = (profile?.full_name ?? profile?.username ?? '?')[0];
@@ -638,78 +785,130 @@ export default function MyDataScreen() {
       )}
 
       {/* ══ AIチャットタブ ══ */}
-      {activeTab === 'ai' && (
+      {activeTab === 'ai' && chatMode === 'list' && (
+        <View style={styles.chatContainer}>
+          <View style={styles.chatListHeader}>
+            <Text style={styles.chatListTitle}>AIアシスタント</Text>
+            <TouchableOpacity style={styles.newChatBtn} onPress={startNewChat}>
+              <Text style={styles.newChatBtnText}>＋ 新規会話</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.chatListContent}>
+            {loadingSessions ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+            ) : sessions.length === 0 ? (
+              <View style={styles.chatEmptyState}>
+                <Text style={styles.chatEmptyEmoji}>💬</Text>
+                <Text style={styles.chatEmptyText}>
+                  まだ会話がありません{'\n'}「新規会話」から始めましょう
+                </Text>
+              </View>
+            ) : (
+              sessions.map(session => (
+                <TouchableOpacity
+                  key={session.id}
+                  style={styles.sessionCard}
+                  onPress={() => openSession(session)}
+                  activeOpacity={0.75}
+                >
+                  <View style={styles.sessionCardContent}>
+                    <Text style={styles.sessionTitle} numberOfLines={1}>{session.title}</Text>
+                    <Text style={styles.sessionDate}>{formatSessionDate(session.created_at)}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => deleteSession(session.id)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Text style={styles.sessionDeleteBtn}>✕</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {activeTab === 'ai' && chatMode === 'chat' && (
         <KeyboardAvoidingView
           style={styles.chatContainer}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={120}
         >
-          <View style={styles.aiHeader}>
-            <View style={styles.aiIconWrap}>
-              <Text style={styles.aiIcon}>✨</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.aiTitle}>AIアシスタント</Text>
-              <Text style={styles.aiSubtitle}>データをもとに分析・提案</Text>
-            </View>
-            <View style={styles.onlineIndicator}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.onlineText}>オンライン</Text>
-            </View>
+          <View style={styles.chatHeader}>
+            <TouchableOpacity
+              onPress={() => setChatMode('list')}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={styles.chatBackBtn}>←</Text>
+            </TouchableOpacity>
+            <Text style={styles.chatTitleText} numberOfLines={1}>
+              {currentSession?.title ?? '会話'}
+            </Text>
           </View>
 
           <ScrollView
+            ref={chatScrollRef}
             style={styles.messageList}
             contentContainerStyle={styles.messageListContent}
             showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => chatScrollRef.current?.scrollToEnd({ animated: false })}
           >
-            {messages.map((msg, i) => (
+            {chatMessages.length === 0 && !loadingChatMessages && (
+              <View style={styles.chatWelcome}>
+                <Text style={styles.chatWelcomeEmoji}>🤖</Text>
+                <Text style={styles.chatWelcomeText}>
+                  こんにちは！{'\n'}社会活動・プロジェクト・自己成長について{'\n'}何でも聞いてください。
+                </Text>
+              </View>
+            )}
+            {loadingChatMessages && <ActivityIndicator color={colors.primary} style={{ marginTop: 20 }} />}
+            {chatMessages.map(msg => (
               <View
-                key={i}
+                key={msg.id}
                 style={[
                   styles.messageBubbleWrap,
                   msg.role === 'user' ? styles.userBubbleWrap : styles.aiBubbleWrap,
                 ]}
               >
-                {msg.role === 'ai' && (
+                {msg.role === 'model' && (
                   <View style={styles.aiAvatar}>
                     <Text style={styles.aiAvatarText}>🤖</Text>
                   </View>
                 )}
                 <View style={[styles.bubble, msg.role === 'user' ? styles.userBubble : styles.aiBubble]}>
-                  <Text style={styles.bubbleText}>{msg.text}</Text>
+                  <Text style={styles.bubbleText}>{msg.content}</Text>
                 </View>
               </View>
             ))}
-          </ScrollView>
-
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.quickQScroll}
-            contentContainerStyle={styles.quickQContent}
-          >
-            {QUICK_QUESTIONS.map((q) => (
-              <TouchableOpacity key={q} style={styles.quickQ} onPress={() => sendMessage(q)}>
-                <Text style={styles.quickQText}>{q}</Text>
-              </TouchableOpacity>
-            ))}
+            {isAiThinking && (
+              <View style={[styles.messageBubbleWrap, styles.aiBubbleWrap]}>
+                <View style={styles.aiAvatar}>
+                  <Text style={styles.aiAvatarText}>🤖</Text>
+                </View>
+                <View style={[styles.bubble, styles.aiBubble]}>
+                  <ActivityIndicator size="small" color="#fff" />
+                </View>
+              </View>
+            )}
           </ScrollView>
 
           <View style={styles.inputRow}>
             <TextInput
               style={styles.inputField}
-              placeholder="質問を入力..."
+              placeholder="メッセージを入力..."
               placeholderTextColor="rgba(255,255,255,0.22)"
-              value={input}
-              onChangeText={setInput}
-              onSubmitEditing={() => sendMessage(input)}
+              value={chatInput}
+              onChangeText={setChatInput}
+              onSubmitEditing={sendChatMessage}
               returnKeyType="send"
+              editable={!isAiThinking}
+              multiline
             />
             <TouchableOpacity
-              style={[styles.sendBtn, !input.trim() && styles.sendBtnDisabled]}
-              onPress={() => sendMessage(input)}
-              disabled={!input.trim()}
+              style={[styles.sendBtn, (!chatInput.trim() || isAiThinking) && styles.sendBtnDisabled]}
+              onPress={sendChatMessage}
+              disabled={!chatInput.trim() || isAiThinking}
             >
               <Text style={styles.sendBtnText}>✈</Text>
             </TouchableOpacity>
@@ -941,24 +1140,47 @@ function makeStyles(c: AppColors) {
     },
     linkEmptyText: { color: c.overlay30, fontSize: 13 },
 
-    chatContainer: { flex: 1, paddingHorizontal: 16 },
-    aiHeader: {
-      flexDirection: 'row', alignItems: 'center', gap: 10,
+    // ─── AI チャット共通 ───
+    chatContainer: { flex: 1 },
+
+    // セッション一覧
+    chatListHeader: {
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 16, paddingTop: 14, paddingBottom: 10,
+      borderBottomWidth: 1, borderBottomColor: c.cardBorder,
+    },
+    chatListTitle: { color: c.text, fontWeight: '800', fontSize: 16 },
+    newChatBtn: {
+      backgroundColor: c.primary, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20,
+    },
+    newChatBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+    chatListContent: { paddingHorizontal: 16, paddingTop: 8, paddingBottom: 40 },
+    chatEmptyState: { alignItems: 'center', paddingTop: 60 },
+    chatEmptyEmoji: { fontSize: 48, marginBottom: 16 },
+    chatEmptyText: { color: c.muted, textAlign: 'center', fontSize: 14, lineHeight: 22 },
+    sessionCard: {
+      flexDirection: 'row', alignItems: 'center',
       backgroundColor: c.card, borderWidth: 1, borderColor: c.cardBorder,
-      borderRadius: 14, padding: 12, marginBottom: 12, marginTop: 12,
+      borderRadius: 12, paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8, gap: 10,
     },
-    aiIconWrap: {
-      width: 36, height: 36, backgroundColor: c.primary,
-      borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+    sessionCardContent: { flex: 1 },
+    sessionTitle: { color: c.text, fontWeight: '600', fontSize: 14, marginBottom: 3 },
+    sessionDate: { color: c.overlay30, fontSize: 11 },
+    sessionDeleteBtn: { color: c.overlay30, fontSize: 16, paddingHorizontal: 4 },
+
+    // チャット画面
+    chatHeader: {
+      flexDirection: 'row', alignItems: 'center', gap: 10,
+      paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10,
+      borderBottomWidth: 1, borderBottomColor: c.cardBorder,
     },
-    aiIcon: { fontSize: 16 },
-    aiTitle: { color: c.text, fontWeight: '700', fontSize: 13 },
-    aiSubtitle: { color: c.overlay30, fontSize: 11 },
-    onlineIndicator: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-    onlineDot: { width: 6, height: 6, backgroundColor: c.green2, borderRadius: 3 },
-    onlineText: { color: c.green2, fontSize: 11 },
+    chatBackBtn: { color: c.primary2, fontSize: 22, lineHeight: 26 },
+    chatTitleText: { flex: 1, color: c.text, fontWeight: '700', fontSize: 14 },
+    chatWelcome: { alignItems: 'center', paddingTop: 40, paddingHorizontal: 32 },
+    chatWelcomeEmoji: { fontSize: 40, marginBottom: 14 },
+    chatWelcomeText: { color: c.muted, textAlign: 'center', fontSize: 14, lineHeight: 22 },
     messageList: { flex: 1 },
-    messageListContent: { paddingBottom: 8, gap: 10 },
+    messageListContent: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
     messageBubbleWrap: { flexDirection: 'row', alignItems: 'flex-end', gap: 6 },
     aiBubbleWrap: { justifyContent: 'flex-start' },
     userBubbleWrap: { justifyContent: 'flex-end' },
@@ -971,19 +1193,15 @@ function makeStyles(c: AppColors) {
     aiBubble: { backgroundColor: `${c.primary}33`, borderTopLeftRadius: 4 },
     userBubble: { backgroundColor: c.primary, borderTopRightRadius: 4 },
     bubbleText: { color: c.textBody, fontSize: 13, lineHeight: 20 },
-    quickQScroll: { marginVertical: 10, flexGrow: 0 },
-    quickQContent: { gap: 8 },
-    quickQ: { backgroundColor: c.inputBg, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
-    quickQText: { color: c.muted, fontSize: 12 },
     inputRow: {
-      flexDirection: 'row', alignItems: 'center',
+      flexDirection: 'row', alignItems: 'flex-end',
       backgroundColor: c.inputBg, borderRadius: 14,
-      paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, gap: 10,
+      paddingHorizontal: 14, paddingVertical: 10, marginHorizontal: 16, marginBottom: 12, gap: 10,
     },
-    inputField: { flex: 1, color: c.text, fontSize: 13 },
+    inputField: { flex: 1, color: c.text, fontSize: 13, maxHeight: 100 },
     sendBtn: {
       width: 32, height: 32, backgroundColor: c.primary,
-      borderRadius: 10, alignItems: 'center', justifyContent: 'center',
+      borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0,
     },
     sendBtnDisabled: { opacity: 0.4 },
     sendBtnText: { color: '#fff', fontSize: 16 },

@@ -75,6 +75,24 @@ create table if not exists project_members (
   unique(project_id, user_id)
 );
 
+-- chat_sessions
+create table if not exists chat_sessions (
+  id         uuid        primary key default gen_random_uuid(),
+  user_id    uuid        not null references profiles(id) on delete cascade,
+  title      text        not null default '新しい会話',
+  created_at timestamptz not null default now()
+);
+
+-- chat_messages
+create table if not exists chat_messages (
+  id         uuid        primary key default gen_random_uuid(),
+  session_id uuid        not null references chat_sessions(id) on delete cascade,
+  user_id    uuid        not null references profiles(id) on delete cascade,
+  role       text        not null check (role in ('user', 'model')),
+  content    text        not null,
+  created_at timestamptz not null default now()
+);
+
 -- notes
 create table if not exists notes (
   id         uuid        primary key default gen_random_uuid(),
@@ -165,6 +183,9 @@ create policy "avatars_delete" on storage.objects
 -- 2. INDEXES
 -- ────────────────────────────────────────────────────────────
 
+create index if not exists idx_chat_sessions_user_id  on chat_sessions(user_id);
+create index if not exists idx_chat_sessions_created  on chat_sessions(created_at desc);
+create index if not exists idx_chat_messages_session  on chat_messages(session_id);
 create index if not exists idx_notes_user_id         on notes(user_id);
 create index if not exists idx_notes_date            on notes(date desc);
 create index if not exists idx_posts_user_id        on posts(user_id);
@@ -186,13 +207,15 @@ alter table post_likes      enable row level security;
 alter table connections     enable row level security;
 alter table projects        enable row level security;
 alter table project_members enable row level security;
+alter table chat_sessions   enable row level security;
+alter table chat_messages   enable row level security;
 alter table notes           enable row level security;
 
 -- Drop existing policies before recreating (idempotent)
 do $$ declare r record; begin
   for r in select policyname, tablename from pg_policies
     where schemaname = 'public'
-    and tablename in ('profiles','posts','post_likes','connections','projects','project_members','notes')
+    and tablename in ('profiles','posts','post_likes','connections','projects','project_members','chat_sessions','chat_messages','notes')
   loop
     execute format('drop policy if exists %I on %I', r.policyname, r.tablename);
   end loop;
@@ -228,6 +251,17 @@ create policy "proj_delete"      on projects for delete  using (auth.uid() = own
 create policy "pm_select"        on project_members for select  using (true);
 create policy "pm_insert"        on project_members for insert  with check (auth.uid() = user_id);
 create policy "pm_delete"        on project_members for delete  using (auth.uid() = user_id);
+
+-- chat_sessions
+create policy "chat_sess_select" on chat_sessions for select  using (auth.uid() = user_id);
+create policy "chat_sess_insert" on chat_sessions for insert  with check (auth.uid() = user_id);
+create policy "chat_sess_update" on chat_sessions for update  using (auth.uid() = user_id);
+create policy "chat_sess_delete" on chat_sessions for delete  using (auth.uid() = user_id);
+
+-- chat_messages
+create policy "chat_msg_select"  on chat_messages for select  using (auth.uid() = user_id);
+create policy "chat_msg_insert"  on chat_messages for insert  with check (auth.uid() = user_id);
+create policy "chat_msg_delete"  on chat_messages for delete  using (auth.uid() = user_id);
 
 -- notes
 create policy "notes_select"     on notes for select  using (auth.uid() = user_id);
