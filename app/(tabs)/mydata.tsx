@@ -110,6 +110,8 @@ export default function MyDataScreen() {
   const [loadingChatMessages, setLoadingChatMessages] = useState(false);
   const [chatInput, setChatInput] = useState('');
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loadingProfile, setLoadingProfile] = useState(true);
@@ -538,6 +540,23 @@ export default function MyDataScreen() {
     }
   };
 
+  const startRenaming = (session: ChatSession) => {
+    setEditingSessionId(session.id);
+    setEditingTitle(session.title);
+  };
+
+  const commitRename = async () => {
+    if (!editingSessionId) return;
+    const newTitle = editingTitle.trim() || '新しい会話';
+    setEditingSessionId(null);
+    setEditingTitle('');
+    await supabase.from('chat_sessions').update({ title: newTitle }).eq('id', editingSessionId);
+    setSessions(prev => prev.map(s => s.id === editingSessionId ? { ...s, title: newTitle } : s));
+    if (currentSession?.id === editingSessionId) {
+      setCurrentSession(prev => prev ? { ...prev, title: newTitle } : null);
+    }
+  };
+
   const avatarInitial = (profile?.full_name ?? profile?.username ?? '?')[0];
   const avatarBg = profile?.avatar_color ?? colors.primary;
 
@@ -815,16 +834,36 @@ export default function MyDataScreen() {
                 <TouchableOpacity
                   key={session.id}
                   style={styles.sessionCard}
-                  onPress={() => openSession(session)}
-                  activeOpacity={0.75}
+                  onPress={() => editingSessionId !== session.id && openSession(session)}
+                  activeOpacity={editingSessionId === session.id ? 1 : 0.75}
                 >
                   <View style={styles.sessionCardContent}>
-                    <Text style={styles.sessionTitle} numberOfLines={1}>{session.title}</Text>
+                    {editingSessionId === session.id ? (
+                      <TextInput
+                        style={styles.sessionTitleInput}
+                        value={editingTitle}
+                        onChangeText={setEditingTitle}
+                        onBlur={commitRename}
+                        onSubmitEditing={commitRename}
+                        returnKeyType="done"
+                        autoFocus
+                        maxLength={40}
+                        selectTextOnFocus
+                      />
+                    ) : (
+                      <Text style={styles.sessionTitle} numberOfLines={1}>{session.title}</Text>
+                    )}
                     <Text style={styles.sessionDate}>{formatSessionDate(session.created_at)}</Text>
                   </View>
                   <TouchableOpacity
+                    onPress={() => startRenaming(session)}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
+                  >
+                    <Text style={styles.sessionEditBtn}>✏️</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
                     onPress={() => deleteSession(session.id)}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}
                   >
                     <Text style={styles.sessionDeleteBtn}>✕</Text>
                   </TouchableOpacity>
@@ -843,14 +882,35 @@ export default function MyDataScreen() {
         >
           <View style={styles.chatHeader}>
             <TouchableOpacity
-              onPress={() => setChatMode('list')}
+              onPress={() => { setEditingSessionId(null); setChatMode('list'); }}
               hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
             >
               <Text style={styles.chatBackBtn}>←</Text>
             </TouchableOpacity>
-            <Text style={styles.chatTitleText} numberOfLines={1}>
-              {currentSession?.title ?? '会話'}
-            </Text>
+            {editingSessionId === currentSession?.id ? (
+              <TextInput
+                style={styles.chatTitleInput}
+                value={editingTitle}
+                onChangeText={setEditingTitle}
+                onBlur={commitRename}
+                onSubmitEditing={commitRename}
+                returnKeyType="done"
+                autoFocus
+                maxLength={40}
+                selectTextOnFocus
+              />
+            ) : (
+              <TouchableOpacity
+                style={{ flex: 1 }}
+                onPress={() => currentSession && startRenaming(currentSession)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.chatTitleText} numberOfLines={1}>
+                  {currentSession?.title ?? '会話'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <Text style={styles.chatHeaderEditHint}>✏️</Text>
           </View>
 
           <ScrollView
@@ -1171,7 +1231,13 @@ function makeStyles(c: AppColors) {
     },
     sessionCardContent: { flex: 1 },
     sessionTitle: { color: c.text, fontWeight: '600', fontSize: 14, marginBottom: 3 },
+    sessionTitleInput: {
+      color: c.text, fontWeight: '600', fontSize: 14,
+      borderBottomWidth: 1, borderBottomColor: c.primary,
+      paddingVertical: 0, marginBottom: 3,
+    },
     sessionDate: { color: c.overlay30, fontSize: 11 },
+    sessionEditBtn: { fontSize: 14, paddingHorizontal: 4 },
     sessionDeleteBtn: { color: c.overlay30, fontSize: 16, paddingHorizontal: 4 },
 
     // チャット画面
@@ -1181,7 +1247,12 @@ function makeStyles(c: AppColors) {
       borderBottomWidth: 1, borderBottomColor: c.cardBorder,
     },
     chatBackBtn: { color: c.primary2, fontSize: 22, lineHeight: 26 },
-    chatTitleText: { flex: 1, color: c.text, fontWeight: '700', fontSize: 14 },
+    chatTitleText: { color: c.text, fontWeight: '700', fontSize: 14 },
+    chatTitleInput: {
+      flex: 1, color: c.text, fontWeight: '700', fontSize: 14,
+      borderBottomWidth: 1, borderBottomColor: c.primary, paddingVertical: 0,
+    },
+    chatHeaderEditHint: { fontSize: 13, opacity: 0.4 },
     chatWelcome: { alignItems: 'center', paddingTop: 40, paddingHorizontal: 32 },
     chatWelcomeEmoji: { fontSize: 40, marginBottom: 14 },
     chatWelcomeText: { color: c.muted, textAlign: 'center', fontSize: 14, lineHeight: 22 },
