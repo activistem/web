@@ -263,6 +263,13 @@ create policy "chat_msg_select"  on chat_messages for select  using (auth.uid() 
 create policy "chat_msg_insert"  on chat_messages for insert  with check (auth.uid() = user_id);
 create policy "chat_msg_delete"  on chat_messages for delete  using (auth.uid() = user_id);
 
+-- ────────────────────────────────────────────────────────────
+-- 3-b. TABLE GRANTS  (authenticated role)
+-- ────────────────────────────────────────────────────────────
+grant select, insert, update, delete on chat_sessions to authenticated;
+grant select, insert, update, delete on chat_messages to authenticated;
+grant select, insert, update, delete on notes         to authenticated;
+
 -- notes
 create policy "notes_select"     on notes for select  using (auth.uid() = user_id);
 create policy "notes_insert"     on notes for insert  with check (auth.uid() = user_id);
