@@ -408,17 +408,24 @@ export default function MyDataScreen() {
     }
   };
 
+  const SQL_HINT = 'Supabase SQL Editorで supabase_schema.sql を実行してください。\n（chat_sessions / chat_messages テーブルが必要です）';
+  const isMissingTable = (code?: string) => code === 'PGRST200' || code === '42P01';
+
   // ── AI チャット ──
   const fetchSessions = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setLoadingSessions(true);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('chat_sessions')
       .select('id, title, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
-    if (data) setSessions(data as ChatSession[]);
+    if (error) {
+      if (!isMissingTable(error.code)) Alert.alert('エラー', error.message);
+    } else if (data) {
+      setSessions(data as ChatSession[]);
+    }
     setLoadingSessions(false);
   }, []);
 
@@ -453,11 +460,10 @@ export default function MyDataScreen() {
       .select('id, title, created_at')
       .single();
     if (error) {
-      if (error.code === '42P01') {
-        Alert.alert('テーブル未作成', 'Supabase SQL Editorで supabase_schema.sql を実行してください。');
-      } else {
-        Alert.alert('エラー', error.message);
-      }
+      Alert.alert(
+        isMissingTable(error.code) ? 'テーブル未作成' : 'エラー',
+        isMissingTable(error.code) ? SQL_HINT : error.message
+      );
       return;
     }
     if (data) {
